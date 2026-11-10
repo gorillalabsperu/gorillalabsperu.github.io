@@ -1,0 +1,11 @@
+GORILLA LABS · VISTA PREVIA LOCAL
+
+Para abrir y probar la web antes de publicarla:
+1. Haz doble clic en “Abrir Gorilla Labs.bat”.
+2. Se abrirá la vista previa en http://127.0.0.1:8000.
+3. Deja abierta la ventana negra mientras pruebas la web.
+4. Para cerrar el servidor, vuelve a esa ventana y presiona Ctrl+C.
+
+La versión local funciona en esta computadora. Para probarla desde un celular,
+el teléfono y la computadora deben estar en la misma red y se debe usar la
+dirección IP local de la computadora junto al puerto 8000.
