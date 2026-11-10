@@ -95,6 +95,8 @@
     .orientation-box h3{margin:0 0 8px;font-size:16px}
     .orientation-box ul{margin:0;padding-left:20px;color:#514758;font-size:14px}
     .orientation-box li+li{margin-top:6px}
+    .pregnancy-alert{border-color:#d8c3e8!important;background:linear-gradient(135deg,#f7f0fc,#fff)!important;color:#4e3262}
+    .pregnancy-alert h3{color:#56208a}
     .rating-box{margin-top:20px;padding:16px;border:1px solid #e8e2eb;border-radius:17px;background:#fff}
     .rating-box h3{margin:0 0 10px;font-size:15px}
     .rating-stars{display:flex;gap:8px}
@@ -105,6 +107,9 @@
     .share-consent input{width:18px;height:18px;flex:none;margin:1px 0 0}
     .share-actions{display:flex;flex-wrap:wrap;gap:10px;margin-top:14px}
     .share-actions .primary,.share-actions .next{flex:1;min-width:220px}
+    .community-benefits{display:grid;gap:8px;margin:10px 0 2px;padding:0;list-style:none;text-align:left;color:#6f6874;font-size:13px;line-height:1.4}
+    .community-benefits li{display:flex;align-items:flex-start;gap:9px}
+    .community-check{display:inline-grid;flex:none;place-items:center;width:16px;height:16px;margin-top:1px;border-radius:50%;background:#f3eafa;color:#6d2da7;font-size:10px;font-weight:800;line-height:1}
     .download-link{display:flex;align-items:center;justify-content:center;text-decoration:none;text-align:center}
     .secondary-action{border:1px solid #ded5e6;border-radius:14px;background:white;padding:12px 16px;color:#4f4555;font-weight:700}
     .record-png{padding:8px 11px;border-radius:10px;white-space:nowrap;font-size:12px}
@@ -112,6 +117,13 @@
     .message-preview strong{display:block;color:#572484;margin-bottom:6px}
     .message-preview p{margin:0;color:#514758;line-height:1.5}
     .share-actions .primary:disabled{opacity:.45;cursor:not-allowed}
+    .final-actions{display:grid;gap:10px;width:min(100%,520px);margin:18px auto 0}
+    .final-actions>button{width:100%;min-height:54px}
+    .final-actions .primary{font-size:15px;letter-spacing:.015em}
+    .final-actions .secondary-action{background:#ffffffd9;color:#4d315c;border-color:#ded2e8}
+    .final-actions>button:disabled{opacity:.55;cursor:not-allowed;box-shadow:none}
+    .final-actions .hint{margin:0 auto 2px;max-width:480px;text-align:center;line-height:1.45}
+    .final-actions .community-benefits{margin:2px 0 0}
     .visual-question{margin:8px 0 9px;text-align:center;font-size:14px;font-weight:750;color:#3d3145}
     .visual-toggle{display:block;width:min(100%,300px);margin:0 auto 12px;padding:12px 16px;border:0;border-radius:14px;background:linear-gradient(120deg,#56208a,#8e3bd0);color:#fff;font-size:14px;font-weight:750;box-shadow:0 7px 18px #56208a20;cursor:pointer}
     .visual-toggle:disabled{opacity:.48;cursor:not-allowed;box-shadow:none}
@@ -148,6 +160,9 @@
   let summaryDownloadUrl = null;
   let remoteProfiles = [];
   let adminEmail = '';
+  function isPregnantProfile(profile) {
+    return !!(window.GorillaFinalScreenUtils && window.GorillaFinalScreenUtils.isPregnant(profile));
+  }
   valid = function () {
     if (step === 6) return !!data.consent;
     return baseValid();
@@ -170,6 +185,28 @@
       '</div>';
     }
   });
+  const baseProfessionalRender = steps[5].render;
+  steps[5].render = function () {
+    if (!window.GorillaFinalScreenUtils || !window.GorillaFinalScreenUtils.showPregnancyQuestion(data)) return baseProfessionalRender();
+    const pregnancyQuestion = '<section class="health-question pregnancy-question"><h3>¿Estás embarazada actualmente?</h3><div class="binary-options" role="group" aria-label="Embarazo actual">' +
+      '<button type="button" class="binary-choice ' + (data.pregnancyStatus === 'No' ? 'selected' : '') + '" data-binary-key="pregnancyStatus" data-binary-value="No" aria-pressed="' + (data.pregnancyStatus === 'No') + '">No</button>' +
+      '<button type="button" class="binary-choice ' + (data.pregnancyStatus === 'Sí' ? 'selected' : '') + '" data-binary-key="pregnancyStatus" data-binary-value="Sí" aria-pressed="' + (data.pregnancyStatus === 'Sí') + '">Sí</button></div></section>';
+    if (window.GorillaFinalScreenUtils.isPregnant(data)) {
+      return '<div class="health-form">' + pregnancyQuestion + '<div class="note pregnancy-alert" role="status">Indicaste un embarazo actual. Este prefiltro general termina aquí; continúa con una evaluación personalizada antes de considerar suplementos.</div></div>';
+    }
+    return baseProfessionalRender().replace('<div class="health-form">', '<div class="health-form">' + pregnancyQuestion);
+  };
+  document.addEventListener('click', function (event) {
+    const button = event.target && event.target.closest ? event.target.closest('[data-binary-key="pregnancyStatus"]') : null;
+    if (!button || button.dataset.binaryValue !== 'Sí' || !steps[step] || steps[step].id !== 'professional') return;
+    event.preventDefault();
+    event.stopImmediatePropagation();
+    sync();
+    data.pregnancyStatus = 'Sí';
+    targetViewSelected = false;
+    step = 6;
+    render();
+  }, true);
   steps[1].render = function () {
     return '<div class="choice-grid goal-choices" data-key="goal">' +
       goalChoice('Aumentar masa muscular','Aumentar masa muscular','Quiero desarrollar músculo.','muscle',2) +
@@ -261,34 +298,41 @@
   };
 
   steps[6].render = function () {
+    const isPregnancyPath = isPregnantProfile(data);
     const profileRows = [
       ['Edad', data.age ? data.age + ' años' : '—'], ['Sexo', data.sex || '—'],
       ['Altura', data.height ? data.height + ' cm' : '—'], ['Peso actual', data.weight ? data.weight + ' kg' : '—'],
-      ['IMC orientativo', calcBMI() ? calcBMI().toFixed(1) : '—'], ['Objetivo', displayGoal(data.goal) || '—'],
+    ];
+    if (!isPregnancyPath) profileRows.push(['IMC orientativo', calcBMI() ? calcBMI().toFixed(1) : '—']);
+    profileRows.push(['Objetivo', displayGoal(data.goal) || '—'],
       ['Actividad', data.activity || '—'], ['Frecuencia de entrenamiento', data.days !== undefined ? data.days + ' día(s) por semana' : '—'],
       ['Duración por sesión', data.duration || '—'], ['Agua al día', data.water || '—'],
       ['Sueño', data.sleep || '—'], ['Comidas al día', data.meals || '—'],
       ['Frutas', data.fruitFrequency || '—'], ['Verduras', data.vegetableFrequency || '—'],
       ['Pescado', data.fishFrequency || '—'], ['Carne, pollo o huevos', data.animalProteinFrequency || '—'],
-      ['Menestras', data.legumeFrequency || '—'], ['Productos salados o procesados', data.processedFoodsFrequency || '—'], ['Antecedentes', listAnswer(data.historyTags, data.historyOther)],
+      ['Menestras', data.legumeFrequency || '—'], ['Productos salados o procesados', data.processedFoodsFrequency || '—'],
+      ['Calificación', data.rating ? data.rating + ' de 5 estrellas' : '—']);
+    if (!isPregnancyPath) profileRows.push(
+      ['Antecedentes', listAnswer(data.historyTags, data.historyOther)],
       ['Alergias', listAnswer(data.allergyTags, data.allergyOther)],
       ['Suplementos actuales', data.supplementStatus === 'No' ? 'No' : listAnswer(data.supplementTags, data.supplementOther)],
       ['Medicamentos', data.medicationStatus === 'No' ? 'No' : data.medicationDetails || '—'],
-      ['Comentario de salud', data.commentStatus === 'Sí' ? data.commentDetails || '—' : 'Omitido'],
-      ['Calificación', data.rating ? data.rating + ' de 5 estrellas' : '—']
-    ];
+      ['Comentario de salud', data.commentStatus === 'Sí' ? data.commentDetails || '—' : 'Omitido']);
+    if (window.GorillaFinalScreenUtils && window.GorillaFinalScreenUtils.showPregnancyQuestion(data)) {
+      profileRows.splice(2, 0, ['Embarazo actual', data.pregnancyStatus || '—']);
+    }
     return '<div class="summary-list">' + profileRows.map(function (row) {
       return '<div class="summary-row"><span>' + escapeHTML(row[0]) + '</span><b>' + escapeHTML(String(row[1])) + '</b></div>';
     }).join('') + '</div>' +
-      '<div class="orientation-box"><h3>Orientación preliminar para tu evaluación</h3><ul>' + orientationTopics().map(function (topic) {
+      '<div class="orientation-box' + (isPregnancyPath ? ' pregnancy-alert' : '') + '"><h3>' + (isPregnancyPath ? 'Atención personalizada' : 'Orientación preliminar para tu evaluación') + '</h3><ul>' + orientationTopics().map(function (topic) {
         return '<li>' + escapeHTML(topic) + '</li>';
       }).join('') + '</ul></div>' +
-      '<div class="note">Esta orientación no diagnostica ni confirma carencias. Las respuestas sobre alimentos no bastan para determinar si necesitas creatina, glutamina, omega‑3 u otro suplemento. La decisión requiere una evaluación profesional presencial y, si corresponde, pruebas clínicas. Coordina tu cita con Gorilla Labs por WhatsApp al <strong>986‑663‑258</strong>.</div>' +
+      '<div class="note">' + (isPregnancyPath ? 'Indicaste que estás embarazada. Este prefiltro general termina aquí; coordina una evaluación personalizada con un profesional antes de considerar suplementos.' : 'Esta orientación no diagnostica ni confirma carencias. Las respuestas sobre alimentos no bastan para determinar si necesitas creatina, glutamina, omega‑3 u otro suplemento. La decisión requiere una evaluación profesional presencial y, si corresponde, pruebas clínicas. Coordina tu cita con Gorilla Labs por WhatsApp al <strong>986‑663‑258</strong>.') + '</div>' +
       '<div class="rating-box"><h3>¿Cómo fue tu experiencia?</h3><div class="rating-stars" role="radiogroup" aria-label="Califica tu experiencia del 1 al 5">' +
         [1,2,3,4,5].map(function (n) { return '<button type="button" class="rating-star ' + (Number(data.rating) >= n ? 'selected' : '') + '" data-rating="' + n + '" aria-label="' + n + ' estrellas" aria-pressed="' + (Number(data.rating) === n) + '">★</button>'; }).join('') +
         '</div><p class="rating-hint">Selecciona de 1 a 5 estrellas. El comentario es opcional.</p><div class="field detail-field"><label for="ratingComment">Comentario opcional</label><textarea id="ratingComment" placeholder="Si quieres, cuéntanos cómo fue">' + escapeHTML(data.ratingComment || '') + '</textarea></div></div>' +
       '<label class="consent"><input type="checkbox" id="consent" ' + (data.consent ? 'checked' : '') + '><span>Autorizo a Gorilla Labs a guardar estos datos para gestionar mi perfil inicial y compartirlos con el profesional que realizará mi evaluación.</span></label>' +
-      '<div class="note">Rango general por estatura: ' + referenceWeightRange() + '. Es una referencia estadística, no un peso ideal individual.</div>';
+      '<div class="note">' + (isPregnancyPath ? 'La estatura y el peso son datos declarados. Este prefiltro no calcula estimaciones corporales durante el embarazo.' : 'Rango general por estatura: ' + referenceWeightRange() + '. Es una referencia estadística, no un peso ideal individual.') + '</div>';
   };
 
   const originalSync = baseSync;
@@ -311,7 +355,13 @@
     if (steps[step] && steps[step].id === 'food') {
       return ['fruitFrequency','vegetableFrequency','fishFrequency','animalProteinFrequency','legumeFrequency','processedFoodsFrequency'].every(function (key) { return Boolean(data[key]); });
     }
-    if (steps[step] && steps[step].id === 'professional') return validProfessionalInfo();
+    if (steps[step] && steps[step].id === 'professional') {
+      if (window.GorillaFinalScreenUtils && window.GorillaFinalScreenUtils.showPregnancyQuestion(data)) {
+        if (!data.pregnancyStatus) return false;
+        if (window.GorillaFinalScreenUtils.isPregnant(data)) return true;
+      }
+      return validProfessionalInfo();
+    }
     if (steps[step] && steps[step].id === 'summary') return Boolean(data.consent && data.rating);
     return baseValid();
   };
@@ -320,12 +370,13 @@
     const h = Number(data.height), w = Number(data.weight);
     const firstStep = step === 0;
     const mobileLayout = window.matchMedia('(max-width:760px)').matches;
-    const bmi = h && w ? w / ((h / 100) ** 2) : 0;
+    const pregnancyPath = isPregnantProfile(data);
+    const bmi = !pregnancyPath && h && w ? w / ((h / 100) ** 2) : 0;
     const days = Number(data.days || 0);
     const training = data.activity === 'Gimnasio' || data.activity === 'Otro deporte' || data.activity === 'Ejercicio';
     const active = data.activityLevel === 'Alto' || data.activityLevel === 'Activo' || (training && days >= 3);
     if (firstStep) targetViewSelected = false;
-    const currentShape = bodyShapeValue(bmi, active);
+    const currentShape = pregnancyPath ? 1 : bodyShapeValue(bmi, active);
     let targetShape = currentShape;
     if (isMuscleGoal(data.goal)) targetShape = bmi >= 28 ? 1.85 : 2;
     if (isDefinitionGoal(data.goal)) targetShape = bmi && bmi < 19 ? .25 : 1;
@@ -334,8 +385,8 @@
     if (bodyCard) {
       const heading = bodyCard.querySelector('h2');
       const description = Array.from(bodyCard.querySelectorAll('p')).find(function (p) { return !p.classList.contains('eyebrow'); });
-      if (heading) heading.textContent = firstStep ? 'Conoce tu punto de partida' : (isEnduranceGoal(data.goal) || isPerformanceGoal(data.goal)) ? 'Tu referencia corporal' : 'Hoy y tu meta visual';
-      if (description) description.textContent = firstStep ? 'Primero registramos tus datos. La silueta cambia a una referencia según el sexo y las medidas que elijas.' : (isEnduranceGoal(data.goal) || isPerformanceGoal(data.goal)) ? 'La figura ilustra tu complexión actual; resistencia y rendimiento no predicen cambios corporales.' : 'Alterna entre tu punto actual y una meta visual ligada al objetivo. Es ilustrativa, no predice un resultado.';
+      if (heading) heading.textContent = firstStep ? 'Conoce tu punto de partida' : pregnancyPath ? 'Atención personalizada' : (isEnduranceGoal(data.goal) || isPerformanceGoal(data.goal)) ? 'Tu referencia corporal' : 'Hoy y tu meta visual';
+      if (description) description.textContent = firstStep ? 'Primero registramos tus datos. La silueta cambia a una referencia según el sexo y las medidas que elijas.' : pregnancyPath ? 'En este caso no mostramos una meta visual. Un profesional podrá orientar el seguimiento de forma personalizada.' : (isEnduranceGoal(data.goal) || isPerformanceGoal(data.goal)) ? 'La figura ilustra tu complexión actual; resistencia y rendimiento no predicen cambios corporales.' : 'Alterna entre tu punto actual y una meta visual ligada al objetivo. Es ilustrativa, no predice un resultado.';
     }
     const model = document.querySelector('.model');
     if (model) {
@@ -369,7 +420,7 @@
         const visualHeight = h ? Math.round((mobileLayout ? 240 : 300) + ((Math.max(145, Math.min(200, h)) - 145) / 55) * (mobileLayout ? 35 : 45)) : (mobileLayout ? 275 : 345);
         const currentSex = data.sex === 'Mujer' ? 'Mujer' : 'Hombre';
         setFigure(currentVisual, currentSex, currentShape, visualHeight, 'Referencia de hoy');
-        setFigure(targetVisual, currentSex, targetShape, visualHeight, 'Meta visual referencial');
+        setFigure(targetVisual, currentSex, pregnancyPath ? currentShape : targetShape, visualHeight, pregnancyPath ? 'Referencia actual' : 'Meta visual referencial');
         const tag = model.querySelector('#targetBodyTag');
         const currentOption = model.querySelector('#currentBodyOption');
         const targetOption = model.querySelector('#targetBodyOption');
@@ -377,19 +428,19 @@
         const targetMeta = model.querySelector('#targetBodyMeta');
         const targetDate = proposedReviewDate();
         const route = internalRoute(bmi);
-        if (tag) tag.textContent = data.goal ? (route.indexOf('Revisar el objetivo') === 0 ? 'OBJETIVO A REVISAR' : (isEnduranceGoal(data.goal) || isPerformanceGoal(data.goal)) ? 'REFERENCIA CORPORAL' : 'META VISUAL') : 'ELIGE TU OBJETIVO';
+        if (tag) tag.textContent = pregnancyPath ? 'REFERENCIA ACTUAL' : data.goal ? (route.indexOf('Revisar el objetivo') === 0 ? 'OBJETIVO A REVISAR' : (isEnduranceGoal(data.goal) || isPerformanceGoal(data.goal)) ? 'REFERENCIA CORPORAL' : 'META VISUAL') : 'ELIGE TU OBJETIVO';
         if (currentMeta) currentMeta.textContent = h && w ? h + ' cm · ' + w + ' kg' : 'Completa altura y peso';
-        if (targetMeta) targetMeta.textContent = !data.goal ? 'Elige un objetivo para continuar' : (isEnduranceGoal(data.goal) || isPerformanceGoal(data.goal)) ? 'No predice cambios de composición corporal' : 'Revisión sugerida: ' + targetDate;
-        if (currentOption) currentOption.hidden = targetViewSelected;
-        if (targetOption) targetOption.hidden = !targetViewSelected;
+        if (targetMeta) targetMeta.textContent = pregnancyPath ? 'No se proyecta una meta corporal en este prefiltro' : !data.goal ? 'Elige un objetivo para continuar' : (isEnduranceGoal(data.goal) || isPerformanceGoal(data.goal)) ? 'No predice cambios de composición corporal' : 'Revisión sugerida: ' + targetDate;
+        if (currentOption) currentOption.hidden = targetViewSelected && !pregnancyPath;
+        if (targetOption) targetOption.hidden = pregnancyPath || !targetViewSelected;
         const visualToggle = document.querySelector('#toggleTargetView');
         if (visualToggle) {
-          visualToggle.disabled = !data.goal;
-          visualToggle.textContent = targetViewSelected ? 'Volver a mi estado actual' : !data.goal ? 'Elige un objetivo primero' : (isEnduranceGoal(data.goal) || isPerformanceGoal(data.goal)) ? 'Ver mi referencia corporal' : 'Ver mi meta visual';
+          visualToggle.disabled = !data.goal || pregnancyPath;
+          visualToggle.textContent = pregnancyPath ? 'Evaluación personalizada requerida' : targetViewSelected ? 'Volver a mi estado actual' : !data.goal ? 'Elige un objetivo primero' : (isEnduranceGoal(data.goal) || isPerformanceGoal(data.goal)) ? 'Ver mi referencia corporal' : 'Ver mi meta visual';
           visualToggle.setAttribute('aria-pressed', String(targetViewSelected));
         }
         const visualQuestion = document.querySelector('.visual-question');
-        if (visualQuestion) visualQuestion.textContent = (isEnduranceGoal(data.goal) || isPerformanceGoal(data.goal)) ? '¿Quieres ver una referencia de tu complexión?' : '¿Quieres ver cómo podrías verte?';
+        if (visualQuestion) visualQuestion.textContent = pregnancyPath ? 'Tu seguimiento requiere orientación personalizada.' : (isEnduranceGoal(data.goal) || isPerformanceGoal(data.goal)) ? '¿Quieres ver una referencia de tu complexión?' : '¿Quieres ver cómo podrías verte?';
       }
     }
     const heightStat = document.querySelector('#heightStat');
@@ -397,9 +448,9 @@
     const bmiStat = document.querySelector('#bmiStat');
     if (heightStat) heightStat.textContent = !firstStep && h ? h + ' cm' : '—';
     if (weightStat) weightStat.textContent = !firstStep && w ? w + ' kg' : '—';
-    if (bmiStat) bmiStat.textContent = !firstStep && bmi ? bmi.toFixed(1) : '—';
+    if (bmiStat) bmiStat.textContent = pregnancyPath ? '—' : !firstStep && bmi ? bmi.toFixed(1) : '—';
     const caption = document.querySelector('#caption');
-    if (caption) caption.textContent = firstStep ? (data.sex ? 'Tu silueta se ajusta como referencia con la altura y el peso que eliges.' : 'Elige mujer u hombre para adaptar la silueta; la altura y el peso ajustan su forma.') :
+    if (caption) caption.textContent = firstStep ? (data.sex ? 'Tu silueta se ajusta como referencia con la altura y el peso que eliges.' : 'Elige mujer u hombre para adaptar la silueta; la altura y el peso ajustan su forma.') : pregnancyPath ? 'La visualización representa únicamente tu punto actual; no proyecta una meta.' :
       (bmi ? (targetViewSelected ? 'Esta referencia ilustra una posible meta; no predice un resultado.' : 'Este es tu punto de partida. Puedes alternar a una referencia visual según tu objetivo.') : 'Completa altura y peso para ver una referencia visual.');
   };
 
@@ -487,6 +538,7 @@
 
   function internalRoute(bmi, profile) {
     const record = profile || data;
+    if (isPregnantProfile(record)) return 'Atención personalizada: prefiltro general finalizado; revisar con profesional.';
     if (isMuscleGoal(record.goal) && bmi >= 28) return 'Ruta interna: evaluar primero definición y composición corporal; después valorar ganancia muscular con especialista.';
     if (isMuscleGoal(record.goal) && bmi > 0 && bmi < 19) return 'Evaluar una ruta de ganancia muscular con especialista';
     if (isMuscleGoal(record.goal)) return 'Evaluar ganancia muscular con especialista';
@@ -517,6 +569,24 @@
   }
 
   let lastRenderedStep = 0;
+  let pendingStepScrollFrame = 0;
+
+  function scrollToStepStart() {
+    if (pendingStepScrollFrame) window.cancelAnimationFrame(pendingStepScrollFrame);
+    pendingStepScrollFrame = window.requestAnimationFrame(function () {
+      pendingStepScrollFrame = 0;
+      const card = document.querySelector('#formCard');
+      if (!card) return;
+      const topbar = document.querySelector('.topbar');
+      const headerBottom = topbar ? Math.max(0, topbar.getBoundingClientRect().bottom) : 0;
+      const cardTop = card.getBoundingClientRect().top + window.scrollY;
+      const targetTop = Math.max(0, cardTop - headerBottom - 14);
+      if (Math.abs(targetTop - window.scrollY) < 4) return;
+      const reduceMotion = window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+      window.scrollTo({ top: targetTop, behavior: reduceMotion ? 'auto' : 'smooth' });
+    });
+  }
+
   render = function () {
     const previousStep = lastRenderedStep;
     baseRender();
@@ -526,6 +596,7 @@
     if (steps[step] && steps[step].id === 'summary') bindSummaryStep();
     updateModel();
     bindVisualToggle();
+    if (step !== previousStep) scrollToStepStart();
     if (step > previousStep && step <= steps.length - 1) toast(stepDoneMessage(previousStep));
     lastRenderedStep = step;
   };
@@ -556,6 +627,7 @@
   }
 
   save = async function () {
+    preparedSummaryBlob = null;
     data.createdAt = new Date().toLocaleString('es-PE');
     const today = new Date();
     data.createdISO = today.toISOString().slice(0, 10);
@@ -573,28 +645,59 @@
       if (nextButton) { nextButton.disabled = false; nextButton.textContent = 'Guardar perfil'; }
       submission = { ok: false, duplicate: false, notificationSent: false, error: error && error.message ? error.message : 'No se pudo enviar la ficha.' };
     }
-    const message = whatsappMessage();
     const savedOnline = !!(submission && submission.ok);
+    const communityInviteUrl = window.GorillaFinalScreenUtils
+      ? window.GorillaFinalScreenUtils.getCommunityInviteUrl(window.GORILLA_COMMUNITY_CONFIG)
+      : '';
+    const receiptMessage = savedOnline
+      ? (submission.duplicate ? 'Esta ficha ya estaba registrada.' : 'Tu perfil quedó registrado para la revisión.')
+      : 'No pudimos registrar la ficha en línea. Descárgala y envíasela al asesor para continuar.';
     document.querySelector('#formCard').innerHTML =
-      '<div class="success-card"><div class="success-brand"><img src="assets/gorilla-mark-approved.png" alt=""><strong>GORILLA LABS</strong></div><div class="success-mark">' + (savedOnline ? '✓' : '↓') + '</div><p class="eyebrow">' + (savedOnline ? 'Perfil recibido' : 'Ficha lista para descargar') + '</p><h1>' + (savedOnline ? '¡Listo, gracias' : '¡Tu ficha está lista') + (data.name ? ', ' + escapeHTML(data.name.split(' ')[0]) : '') + '!</h1>' +
-      '<p class="cloud-receipt">' + (savedOnline ? (submission.duplicate ? 'Esta ficha ya estaba registrada; no se creó un duplicado.' : 'Tu ficha se guardó correctamente en el registro de Gorilla Labs.') + (submission.notificationSent ? ' El aviso administrativo fue enviado.' : ' La ficha quedó guardada; el aviso por correo está pendiente de configuración o reintento.') : 'No se pudo enviar al registro central. ' + escapeHTML(submission.error || 'Descarga tu ficha antes de cerrar esta pantalla.')) + '</p>' +
-      (savedOnline ? '' : '<div class="share-actions"><button type="button" class="secondary-action" id="retrySubmission">Reintentar envío</button></div>') +
-      '<p>Estamos preparando tu ficha en imagen. Incluirá tus datos, hábitos, respuestas de salud y una referencia visual actual y futura.</p>' +
-      '<div class="message-preview"><strong>Mensaje de bienvenida</strong><p>' + escapeHTML(message) + '</p></div>' +
-      '<div class="share-actions"><button type="button" class="primary" id="downloadSummary" disabled>Preparando ficha…</button></div><p class="hint" id="downloadStatus" role="status" aria-live="polite">Estamos preparando tu imagen en alta calidad.</p>' +
-      '<label class="share-consent"><input type="checkbox" id="whatsappConsent"><span>Quiero abrir WhatsApp con mi nombre, edad, objetivo, altura y peso en el mensaje. Revisaré la ficha descargada —que incluye mis respuestas de salud— y decidiré si la adjunto antes de enviarla.</span></label>' +
-      '<div class="share-actions"><button type="button" class="secondary-action" id="openWhatsapp" disabled>Abrir WhatsApp Gorilla Labs · 986‑663‑258</button></div>' +
-      '<p class="hint" style="margin-top:10px">Se descargará como imagen PNG para que la guardes o la adjuntes manualmente en WhatsApp. WhatsApp no la adjunta automáticamente.</p>' +
+      '<div class="success-card"><div class="success-brand"><img src="assets/gorilla-mark-approved.png" alt=""><strong>GORILLA LABS</strong></div>' +
+      '<p class="eyebrow">Ficha informativa</p><h1>¡Tu ficha está lista' + (data.name ? ', ' + escapeHTML(data.name.split(' ')[0]) : '') + '!</h1>' +
+      (window.GorillaFinalScreenUtils && window.GorillaFinalScreenUtils.isPregnant(data)
+        ? '<p class="pregnancy-alert" role="status">Indicaste que estás embarazada. Tu seguimiento debe ser personalizado con un profesional.</p>'
+        : '<p>Descárgala y luego envíasela a tu asesor por WhatsApp. La ficha incluye la información que compartiste en el formulario.</p>') +
+      (window.GorillaFinalScreenUtils && window.GorillaFinalScreenUtils.isPregnant(data)
+        ? '<p>Descarga tu ficha y, si deseas continuar, coordina directamente una evaluación personalizada con Gorilla Labs.</p>'
+        : '') +
+      '<p class="cloud-receipt" role="status">' + escapeHTML(receiptMessage) + '</p>' +
+      '<div class="final-actions">' +
+      '<button type="button" class="primary" id="downloadSummary">DESCARGAR MI FICHA</button>' +
+      '<p class="hint" id="downloadStatus" role="status" aria-live="polite">Estamos preparando tu ficha PNG completa.</p>' +
+      '<button type="button" class="secondary-action" id="openWhatsapp" disabled>ENVIAR MI FICHA AL ASESOR</button>' +
+      '<p class="hint" id="advisorHelp">Primero inicia la descarga. WhatsApp abrirá un mensaje preparado; adjunta la ficha manualmente y pulsa enviar.</p>' +
+      '<button type="button" class="secondary-action" id="joinCommunity" ' + (communityInviteUrl ? '' : 'disabled') + '>UNIRME A LA COMUNIDAD GORILLA LABS PERÚ</button>' +
+      '<p class="hint" id="communityStatus" role="status" aria-live="polite">' + (communityInviteUrl ? 'La invitación oficial de WhatsApp está lista.' : 'La invitación oficial de la comunidad está pendiente de configuración.') + '</p>' +
+      '<ul class="community-benefits" aria-label="Beneficios de la comunidad"><li><span class="community-check" aria-hidden="true">✓</span><span>Promociones y descuentos exclusivos.</span></li><li><span class="community-check" aria-hidden="true">✓</span><span>Tips según tu progreso y objetivo.</span></li><li><span class="community-check" aria-hidden="true">✓</span><span>Consejos para mejorar tus hábitos y cumplir tus metas.</span></li></ul>' +
+      '</div>' +
       '<button type="button" class="back finish-action" id="finishProfile">Finalizar</button></div>';
-    const consent = document.querySelector('#whatsappConsent');
     const waButton = document.querySelector('#openWhatsapp');
-    consent.addEventListener('change', function () { waButton.disabled = !consent.checked; });
-    waButton.addEventListener('click', function () { if (consent.checked) window.open(whatsappUrl(), '_blank', 'noopener,noreferrer'); });
+    const joinButton = document.querySelector('#joinCommunity');
+    const downloadState = window.GorillaFinalScreenUtils.createDownloadState();
+    waButton.addEventListener('click', function () {
+      if (downloadState.canSendToAdvisor()) window.open(whatsappUrl(), '_blank', 'noopener,noreferrer');
+    });
+    joinButton.addEventListener('click', function () {
+      if (communityInviteUrl) window.open(communityInviteUrl, '_blank', 'noopener,noreferrer');
+    });
     const downloadButton = document.querySelector('#downloadSummary');
-    downloadButton.addEventListener('click', function () { prepareSummaryDownload(downloadButton); });
-    prepareSummaryDownload(downloadButton);
-    const retryButton = document.querySelector('#retrySubmission');
-    if (retryButton) retryButton.addEventListener('click', save);
+    downloadButton.addEventListener('click', function () {
+      if (!preparedSummaryBlob) {
+        prepareSummaryDownload(downloadButton, downloadState);
+        return;
+      }
+      try {
+        startSummaryDownload(preparedSummaryBlob);
+        downloadState.markDownloadStarted();
+        waButton.disabled = false;
+        document.querySelector('#downloadStatus').textContent = 'La descarga se inició. Revisa Descargas para confirmar que el archivo quedó disponible.';
+        document.querySelector('#advisorHelp').textContent = 'En WhatsApp se abrirá un mensaje preparado. Adjunta manualmente la ficha PNG y pulsa enviar.';
+      } catch (_) {
+        document.querySelector('#downloadStatus').textContent = 'No se pudo iniciar la descarga. Vuelve a pulsar «Descargar mi ficha» para intentarlo otra vez.';
+      }
+    });
+    prepareSummaryDownload(downloadButton, downloadState);
     document.querySelector('#finishProfile').addEventListener('click', function () {
       step = 0;
       Object.keys(data).forEach(function (key) { delete data[key]; });
@@ -607,6 +710,7 @@
       window.scrollTo({ top: 0, behavior: 'smooth' });
     });
     updateModel();
+    scrollToStepStart();
   };
 
   function fallbackSubmissionId() {
@@ -759,6 +863,7 @@
 
   function profileWorksheetXML(profile) {
     const rows = [];
+    const pregnancyPath = !!(window.GorillaFinalScreenUtils && window.GorillaFinalScreenUtils.isPregnant(profile));
     const merges = ['A1:E1','A4:E4','B5:E5','A9:E9','A10:E10','A11:E11','A13:E13','A17:E17','A23:E23','A28:E28','A29:E29','A30:E30','A31:E31','A32:E32','A33:E33','A34:E34','A35:E35','A36:E36','A37:E37','A38:E38','A39:E39','A40:E40','A41:E41','A42:E42'];
     function cell(ref, value, style, type) {
       const s = style == null ? 4 : style;
@@ -783,12 +888,13 @@
     row(5,[cell('A5','Nombre completo',3),cell('B5',profile.name,4)],30);
     pairRow(6,'Teléfono',profile.phone||'','Edad',profile.age ? profile.age + ' años' : '');
     row(7,[cell('A7','Sexo',3),cell('B7',profile.sex||'',4)],27);
+    row(8,[cell('A8','Embarazo actual',3),cell('B8',profile.sex === 'Mujer' ? profile.pregnancyStatus || '' : 'No aplica',4)],27);
     section(9,'OBJETIVO PRINCIPAL');
     row(10,[cell('A10',displayGoal(profile.goal)||'Pendiente de selección',5)],34);
     mergedNote(11,goalLegend(profile),'6');
     section(13,'MEDIDAS Y REFERENCIA');
     pairRow(14,'Altura (cm)',profile.height||'','Peso (kg)',profile.weight||'');
-    row(15,[cell('A15','IMC orientativo',3),cell('B15','IFERROR(E14/(B14/100)^2,"")',8,'formula'),cell('D15','Lectura',3),cell('E15','Solo referencia; no distingue grasa de músculo.',6)],34);
+    row(15,[cell('A15',pregnancyPath ? 'Seguimiento' : 'IMC orientativo',3),pregnancyPath ? cell('B15','',8) : cell('B15','IFERROR(E14/(B14/100)^2,"")',8,'formula'),cell('D15',pregnancyPath ? 'Evaluación' : 'Lectura',3),cell('E15',pregnancyPath ? 'Requiere atención personalizada.' : 'Solo referencia; no distingue grasa de músculo.',6)],34);
     section(17,'ACTIVIDAD Y HÁBITOS');
     pairRow(18,'Actividad',profile.activity||'','Nivel habitual',profile.activityLevel||'');
     pairRow(19,'Días por semana',profile.days==null?'':profile.days,'Duración',profile.duration||'');
@@ -829,6 +935,9 @@
   }
 
   function orientationForRecord(profile) {
+    if (window.GorillaFinalScreenUtils && window.GorillaFinalScreenUtils.isPregnant(profile)) {
+      return ['Indicó embarazo actual: este prefiltro general no realiza recomendaciones de suplementos; coordinar orientación personalizada con un profesional.'];
+    }
     const notes = [];
     const rare = function (key) { return profile[key] === 'Rara vez o nunca' || profile[key] === '1–2 veces por semana'; };
     if (rare('fishFrequency')) notes.push('Poco pescado reportado: conversar sobre fuentes alimentarias de omega‑3; no confirma una carencia.');
@@ -937,6 +1046,7 @@
     document.querySelectorAll('[data-sex-choice]').forEach(function (button) {
       button.addEventListener('click', function () {
         data.sex = button.dataset.sexChoice;
+        if (data.sex !== 'Mujer') data.pregnancyStatus = '';
         document.querySelectorAll('[data-sex-choice]').forEach(function (other) {
           const selected = other.dataset.sexChoice === data.sex;
           other.classList.toggle('selected', selected);
@@ -1072,11 +1182,13 @@
 
   function calcBMI(profile) {
     const record = profile || data;
+    if (isPregnantProfile(record)) return 0;
     const h = Number(record.height), w = Number(record.weight);
     return h && w ? w / ((h / 100) ** 2) : 0;
   }
 
   function referenceWeightRangeFor(profile) {
+    if (window.GorillaFinalScreenUtils && window.GorillaFinalScreenUtils.isPregnant(profile)) return 'No se estima en este prefiltro';
     const height = Number(profile && profile.height) / 100;
     if (!height) return 'Pendiente';
     const min = 18.5 * height * height, max = 24.9 * height * height;
@@ -1090,6 +1202,9 @@
 
   function orientationTopics(profile) {
     const record = profile || data;
+    if (window.GorillaFinalScreenUtils && window.GorillaFinalScreenUtils.isPregnant(record)) {
+      return ['Indicaste que estás embarazada. Este prefiltro general termina aquí; un profesional puede orientar el seguimiento de forma personalizada antes de considerar suplementos.'];
+    }
     const bmi = calcBMI(record);
     const topics = [];
     const rare = function (key) { return record[key] === 'Rara vez o nunca' || record[key] === '1–2 veces por semana'; };
@@ -1117,36 +1232,80 @@
   }
 
   function whatsappMessage() {
-    return 'Hola, soy ' + (data.name || '') + '. Estos son mis datos básicos: ' + (data.age || '—') + ' años; objetivo ' + (displayGoal(data.goal) || '—') + '; estatura ' + (data.height || '—') + ' cm; peso ' + (data.weight || '—') + ' kg. Quiero coordinar una evaluación presencial. Adjuntaré mi ficha.';
+    return window.GorillaFinalScreenUtils
+      ? window.GorillaFinalScreenUtils.buildAdvisorMessage(data.name)
+      : 'Hola, soy ' + (data.name || 'cliente') + '. Ya completé mi ficha de Gorilla Labs y adjuntaré mi ficha PNG manualmente en este chat.';
   }
 
-  function prepareSummaryDownload(button) {
+  let preparedSummaryBlob = null;
+
+  function prepareSummaryDownload(button, downloadState) {
     if (!button) return;
     const status = document.querySelector('#downloadStatus');
     button.disabled = true;
-    button.textContent = 'Preparando ficha…';
-    if (status) status.textContent = 'Estamos preparando tu imagen en alta calidad.';
+    button.textContent = 'Generando ficha…';
+    if (status) status.textContent = 'Estamos preparando y verificando la ficha PNG completa.';
     drawSummaryCanvas().then(function (canvas) {
-      return new Promise(function (resolve, reject) {
-        if (typeof canvas.toBlob !== 'function') { reject(new Error('PNG no disponible en este navegador.')); return; }
-        canvas.toBlob(function (blob) { blob ? resolve(blob) : reject(new Error('No se pudo crear la imagen.')); }, 'image/png');
+      return canvasToPngBlob(canvas).then(function (blob) {
+        if (!window.GorillaFinalScreenUtils) throw new Error('PNG validation unavailable');
+        return window.GorillaFinalScreenUtils.verifyPngBlob(blob, canvas.width, canvas.height);
       });
     }).then(function (blob) {
-      if (summaryDownloadUrl) URL.revokeObjectURL(summaryDownloadUrl);
-      summaryDownloadUrl = URL.createObjectURL(blob);
-      const link = document.createElement('a');
-      link.id = 'downloadSummary';
-      link.className = 'primary download-link';
-      link.href = summaryDownloadUrl;
-      link.download = 'gorilla-labs-ficha-' + safeFilename(data.name) + '-' + (data.createdISO || new Date().toISOString().slice(0,10)) + '.png';
-      link.textContent = 'Descargar mi ficha';
-      button.replaceWith(link);
-      if (status) status.textContent = 'Tu ficha está lista. Pulsa “Descargar mi ficha” para guardarla.';
-    }).catch(function () {
+      preparedSummaryBlob = blob;
+      if (downloadState) downloadState.markPngVerified();
       button.disabled = false;
-      button.textContent = 'Reintentar preparación';
-      if (status) status.textContent = 'No se pudo preparar la imagen. Vuelve a intentarlo antes de cerrar esta pantalla.';
+      button.textContent = 'DESCARGAR MI FICHA';
+      if (status) status.textContent = 'La ficha PNG está generada y verificada. Pulsa el botón para iniciar la descarga.';
+    }).catch(function () {
+      preparedSummaryBlob = null;
+      button.disabled = false;
+      button.textContent = 'REINTENTAR GENERACIÓN';
+      if (status) status.textContent = 'No pudimos generar la ficha PNG. Pulsa «Reintentar generación» para volver a intentarlo.';
     });
+  }
+
+  function canvasToPngBlob(canvas) {
+    return new Promise(function (resolve, reject) {
+      if (typeof canvas.toBlob === 'function') {
+        canvas.toBlob(function (blob) { blob ? resolve(blob) : reject(new Error('PNG creation failed')); }, 'image/png');
+        return;
+      }
+      try {
+        const dataUrl = canvas.toDataURL('image/png');
+        const base64 = dataUrl.split(',')[1];
+        if (!base64 || typeof window.atob !== 'function') throw new Error('PNG conversion failed');
+        const binary = window.atob(base64);
+        const bytes = new Uint8Array(binary.length);
+        for (let i = 0; i < binary.length; i += 1) bytes[i] = binary.charCodeAt(i);
+        resolve(new Blob([bytes], { type: 'image/png' }));
+      } catch (error) {
+        reject(error);
+      }
+    });
+  }
+
+  function startSummaryDownload(blob) {
+    summaryDownloadUrl = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.href = summaryDownloadUrl;
+    link.download = 'gorilla-labs-ficha-' + safeFilename(data.name) + '-' + (data.createdISO || new Date().toISOString().slice(0, 10)) + '.png';
+    link.style.position = 'fixed';
+    link.style.left = '-10000px';
+    document.body.appendChild(link);
+    try {
+      link.click();
+    } catch (error) {
+      link.remove();
+      URL.revokeObjectURL(summaryDownloadUrl);
+      summaryDownloadUrl = null;
+      throw error;
+    }
+    link.remove();
+    const url = summaryDownloadUrl;
+    window.setTimeout(function () {
+      URL.revokeObjectURL(url);
+      if (summaryDownloadUrl === url) summaryDownloadUrl = null;
+    }, 60000);
   }
 
   async function drawSummaryCanvas(profile) {
@@ -1159,168 +1318,213 @@
     const canvas = document.createElement('canvas');
     canvas.width = 1080;
     const ctx = canvas.getContext('2d');
-    const brandMark = new Image();
-    brandMark.src = window.GORILLA_MARK_DATA || 'assets/gorilla-mark-approved.png';
-    await new Promise(function (resolve) { brandMark.onload = resolve; brandMark.onerror = resolve; if (brandMark.complete) resolve(); });
-    const margin = 48;
-    const bodyWidth = canvas.width - margin * 2;
-    const bmi = calcBMI(data);
-    const days = Number(data.days || 0);
-    const training = data.activity === 'Gimnasio' || data.activity === 'Otro deporte' || data.activity === 'Ejercicio';
-    const active = data.activityLevel === 'Alto' || data.activityLevel === 'Activo' || (training && days >= 3);
-    const currentShape = bodyShapeValue(bmi, active);
-    let targetShape = currentShape;
-    if (isMuscleGoal(data.goal)) targetShape = bmi >= 28 ? 1.85 : 2;
-    if (isDefinitionGoal(data.goal)) targetShape = bmi && bmi < 19 ? .25 : 1;
-    const sex = data.sex === 'Mujer' ? 'Mujer' : 'Hombre';
-    const currentFigure = await bodySpriteFrame(sex, currentShape);
-    const targetFigure = await bodySpriteFrame(sex, targetShape);
-    const targetLabel = internalRoute(bmi, data).indexOf('Revisar el objetivo') === 0 ? 'OBJETIVO A REVISAR' : (isEnduranceGoal(data.goal) || isPerformanceGoal(data.goal)) ? 'REFERENCIA CORPORAL' : 'META VISUAL';
+    const margin = 48, bodyWidth = canvas.width - margin * 2, gap = 18;
+    const pregnancyPath = isPregnantProfile(data);
+    const bmi = pregnancyPath ? 0 : calcBMI(data);
+    const selector = window.GorillaResultBodies;
+    const currentBody = pregnancyPath
+      ? { sex: data.sex, frame: 1, category: 'referencial', label: 'Referencia actual' }
+      : selector ? selector.selectCurrent(data) : { sex: data.sex, frame: null, category: 'neutral', label: 'Referencia neutra' };
+    const targetBody = pregnancyPath ? currentBody : selector ? selector.selectTarget(data, currentBody) : currentBody;
+    const figureFor = async function (selection) {
+      if (selection && selection.frame !== null && selection.sex) return bodySpriteFrame(selection.sex, selection.frame);
+      const image = new Image();
+      const sex = selection && selection.sex;
+      image.src = sex === 'Mujer' ? 'assets/female-silhouette-reference.png' : sex === 'Hombre' ? 'assets/male-silhouette-reference.png' : 'assets/person-silhouette.svg';
+      await new Promise(function (resolve) { image.onload = resolve; image.onerror = resolve; if (image.complete) resolve(); });
+      return image.naturalWidth ? image : null;
+    };
+    const images = await Promise.all([figureFor(currentBody), figureFor(targetBody)]);
+    const watermarkMark = new Image();
+    watermarkMark.src = window.GORILLA_MARK_DATA || 'assets/gorilla-mark-approved.png';
+    await new Promise(function (resolve) { watermarkMark.onload = resolve; watermarkMark.onerror = resolve; if (watermarkMark.complete) resolve(); });
+    const officialLogo = new Image();
+    officialLogo.src = 'assets/gorilla-labs-logo.png';
+    await new Promise(function (resolve) { officialLogo.onload = resolve; officialLogo.onerror = resolve; if (officialLogo.complete) resolve(); });
+    const dateText = data.createdISO ? new Intl.DateTimeFormat('es-PE').format(new Date(String(data.createdISO).slice(0, 10) + 'T12:00:00')) : new Date().toLocaleDateString('es-PE');
     const supplements = data.supplementStatus === 'No' ? 'No' : listAnswer(data.supplementTags, data.supplementOther);
     const medicines = data.medicationStatus === 'No' ? 'No' : (data.medicationDetails || 'No especificado');
     const comment = data.commentStatus === 'Sí' ? (data.commentDetails || 'Sin detalle') : 'Omitido';
+    const row = function (label, value) { return { label: label, value: String(value == null || value === '' ? '—' : value) }; };
+    const profileRows = [row('Nombre', data.name), row('Teléfono', data.phone), row('Edad / sexo', (data.age ? data.age + ' años' : '—') + ' · ' + (data.sex || '—'))];
+    if (data.sex === 'Mujer') profileRows.push(row('Embarazo actual', data.pregnancyStatus || '—'));
+    profileRows.push(row('Estatura', data.height ? data.height + ' cm' : '—'), row('Peso actual', data.weight ? data.weight + ' kg' : '—'));
+    if (!pregnancyPath) profileRows.push(row('IMC orientativo', bmi ? bmi.toFixed(1) : '—'), row('Rango por estatura', referenceWeightRangeFor(data)));
+    profileRows.push(row('Objetivo elegido', displayGoal(data.goal) || '—'));
+    const professionalRows = pregnancyPath
+      ? [row('Embarazo actual', 'Sí · requiere evaluación personalizada')]
+      : [row('Antecedentes', listAnswer(data.historyTags, data.historyOther)), row('Alergias', listAnswer(data.allergyTags, data.allergyOther)), row('Suplementos actuales', supplements), row('Medicamentos', medicines), row('Comentario adicional', comment)];
     const sections = [
-      { title: 'PERFIL Y OBJETIVO', rows: [
-        'Nombre: ' + (data.name || '—'), 'Teléfono: ' + (data.phone || '—'), 'Edad: ' + (data.age || '—') + ' años · Sexo: ' + (data.sex || '—'),
-        'Altura: ' + (data.height || '—') + ' cm · Peso actual: ' + (data.weight || '—') + ' kg · IMC orientativo: ' + (bmi ? bmi.toFixed(1) : '—'),
-        'Objetivo elegido: ' + (displayGoal(data.goal) || '—'), 'Rango estadístico por estatura: ' + referenceWeightRangeFor(data)
-      ]},
-      { title: 'ACTIVIDAD Y HÁBITOS', rows: [
-        'Actividad: ' + (data.activity || '—') + (data.sport ? ' · Deporte: ' + data.sport : ''),
-        'Nivel habitual: ' + (data.activityLevel || '—') + ' · Entrenamiento: ' + (data.days === undefined ? '—' : data.days + ' día(s)/semana') + ' · Duración: ' + (data.duration || '—'),
-        'Agua: ' + (data.water || '—') + ' · Sueño: ' + (data.sleep || '—'), 'Comidas al día: ' + (data.meals || '—') + ' · Proteína habitual: ' + (data.protein || '—')
-      ]},
-      { title: 'ALIMENTACIÓN REPORTADA', rows: [
-        'Frutas: ' + (data.fruitFrequency || '—') + ' · Verduras: ' + (data.vegetableFrequency || '—'),
-        'Pescado: ' + (data.fishFrequency || '—') + ' · Carne, pollo o huevos: ' + (data.animalProteinFrequency || '—'),
-        'Menestras: ' + (data.legumeFrequency || '—') + ' · Productos salados/procesados: ' + (data.processedFoodsFrequency || '—')
-      ]},
-      { title: 'INFORMACIÓN PARA EL PROFESIONAL', rows: [
-        'Antecedentes: ' + listAnswer(data.historyTags, data.historyOther), 'Alergias: ' + listAnswer(data.allergyTags, data.allergyOther),
-        'Suplementos actuales: ' + supplements, 'Medicamentos: ' + medicines, 'Comentario adicional: ' + comment
-      ]},
-      { title: 'ORIENTACIÓN PRELIMINAR', rows: orientationTopics(data) },
-      { title: 'VALORACIÓN DE LA EXPERIENCIA', rows: [
-        'Calificación: ' + (data.rating ? data.rating + ' de 5 estrellas' : '—'), 'Comentario de experiencia: ' + (data.ratingComment || 'Sin comentario')
-      ]}
+      { title: 'PERFIL Y OBJETIVO', rows: profileRows },
+      { title: 'ACTIVIDAD Y HÁBITOS', rows: [row('Actividad física', data.activity), row('Nivel habitual', data.activityLevel), row('Entrenamiento semanal', data.days !== undefined ? data.days + ' día(s)' : '—'), row('Duración por sesión', data.duration), row('Deporte', data.sport || '—'), row('Consumo de agua', data.water), row('Horas de sueño', data.sleep), row('Comidas al día', data.meals), row('Proteína habitual', data.protein)] },
+      { title: 'ALIMENTACIÓN REPORTADA', rows: [row('Frutas', data.fruitFrequency), row('Verduras', data.vegetableFrequency), row('Pescado', data.fishFrequency), row('Carne, pollo o huevos', data.animalProteinFrequency), row('Menestras', data.legumeFrequency), row('Productos salados/procesados', data.processedFoodsFrequency)] },
+      { title: 'INFORMACIÓN PARA EL PROFESIONAL', rows: professionalRows },
+      { title: 'ORIENTACIÓN PRELIMINAR', rows: orientationTopics(data).map(function (item) { return row('•', item); }) },
+      { title: 'VALORACIÓN DE LA EXPERIENCIA', rows: [row('Calificación', data.rating ? data.rating + ' de 5 estrellas' : '—'), row('Comentario', data.ratingComment || 'Sin comentario')] }
     ];
-    ctx.font = '20px system-ui, sans-serif';
-    function wrap(text, maxWidth) {
-      const words = String(text).split(/\s+/), lines = [];
-      let line = '';
+    const colors = { purple: '#6922a3', deep: '#331640', pale: '#f3eafa', ink: '#1e1922', text: '#554e5a', muted: '#817987', line: '#e7e1ea', bg: '#f7f6f8', white: '#ffffff' };
+    const lineHeight = 22;
+    const wrap = function (text, maxWidth, font) {
+      ctx.font = font;
+      const words = String(text || '—').split(/\s+/), lines = [];
+      let current = '';
       words.forEach(function (word) {
-        const attempt = line ? line + ' ' + word : word;
-        if (ctx.measureText(attempt).width > maxWidth && line) { lines.push(line); line = word; }
-        else line = attempt;
+        const next = current ? current + ' ' + word : word;
+        if (current && ctx.measureText(next).width > maxWidth) { lines.push(current); current = word; }
+        else current = next;
       });
-      if (line) lines.push(line);
+      if (current) lines.push(current);
       return lines;
-    }
-    sections.forEach(function (section) {
-      section.lines = [];
-      section.rows.forEach(function (row) { section.lines.push(wrap(row, bodyWidth - 64)); });
-    });
-    const visualCardHeight = 570;
-    const sectionsHeight = sections.reduce(function (sum, section) {
-      return sum + 48 + section.lines.reduce(function (subtotal, lines) { return subtotal + lines.length * 31 + 12; }, 0) + 14;
-    }, 0);
-    const habitCardHeight = 186;
-    canvas.height = 350 + visualCardHeight + 14 + habitCardHeight + 14 + sectionsHeight + 80;
-    ctx.fillStyle = '#f8f7fa'; ctx.fillRect(0, 0, canvas.width, canvas.height);
-    const header = ctx.createLinearGradient(0, 0, canvas.width, 0); header.addColorStop(0, '#351747'); header.addColorStop(1, '#7628aa'); ctx.fillStyle = header; ctx.fillRect(0, 0, canvas.width, 250);
-    ctx.textAlign = 'left';
-    if (brandMark.naturalWidth) ctx.drawImage(brandMark, margin, 34, 92, 92);
-    ctx.fillStyle = '#ffffff'; ctx.font = '800 29px system-ui,sans-serif'; ctx.fillText('GORILLA LABS', 180, 78);
-    const fichaDate = data.createdISO ? new Intl.DateTimeFormat('es-PE').format(new Date(String(data.createdISO).slice(0, 10) + 'T12:00:00')) : new Date().toLocaleDateString('es-PE');
-    ctx.fillStyle = '#eee5f5'; ctx.font = '16px system-ui,sans-serif'; ctx.fillText('Ficha informativa · ' + fichaDate, 164, 111);
-    ctx.fillStyle = '#ffffff'; ctx.font = '700 18px system-ui,sans-serif';
-    wrap('Hola, soy ' + (data.name || 'cliente') + '. Estos son mis datos.', canvas.width - 164 - margin).forEach(function (line, index) { ctx.fillText(line, 164, 177 + index * 25); });
-    ctx.textAlign = 'left';
-    ctx.font = '700 29px system-ui,sans-serif'; ctx.fillStyle = '#241a2a'; ctx.fillText('Día 1 · Punto de partida', margin, 307);
-    let y = 350;
-    ctx.fillStyle = '#ffffff'; roundedRect(ctx, margin, y, bodyWidth, visualCardHeight, 20); ctx.fill();
-    ctx.fillStyle = '#7027b5'; ctx.font = '800 17px system-ui,sans-serif'; ctx.fillText('REFERENCIA VISUAL · ILUSTRATIVA', margin + 24, y + 31);
-    ctx.fillStyle = '#403747'; ctx.font = '650 18px system-ui,sans-serif'; ctx.fillText('Objetivo: ' + (displayGoal(data.goal) || 'por definir'), margin + 24, y + 58);
-    const colWidth = bodyWidth / 2;
-    const figureHeight = Math.round(300 + ((Math.max(145, Math.min(200, Number(data.height) || 170)) - 145) / 55) * 40);
-    const figureWidth = Math.round(figureHeight * currentFigure.width / currentFigure.height);
-    ctx.textAlign = 'center'; ctx.fillStyle = '#7027b5'; ctx.font = '800 15px system-ui,sans-serif';
-    ctx.fillText('PUNTO DE PARTIDA', margin + colWidth / 2, y + 88);
-    ctx.fillText(targetLabel, margin + colWidth * 1.5, y + 88);
-    const figureY = y + 100;
-    ctx.drawImage(currentFigure, margin + (colWidth - figureWidth) / 2, figureY, figureWidth, figureHeight);
-    ctx.drawImage(targetFigure, margin + colWidth + (colWidth - figureWidth) / 2, figureY, figureWidth, figureHeight);
-    if (isMuscleGoal(data.goal) || isDefinitionGoal(data.goal)) {
-      const arrowX = margin + colWidth, arrowY = figureY + figureHeight * .48;
-      ctx.fillStyle = '#f1e7fa'; ctx.beginPath(); ctx.arc(arrowX, arrowY, 25, 0, Math.PI * 2); ctx.fill();
-      ctx.fillStyle = '#7027b5'; ctx.font = '700 31px system-ui,sans-serif'; ctx.fillText('→', arrowX, arrowY + 10);
-    }
-    const metricY = y + 442, metricHeight = 74, metricGap = 12;
-    const metrics = [
-      ['EDAD', data.age ? data.age + ' años' : '—'],
-      ['ESTATURA', data.height ? data.height + ' cm' : '—'],
-      ['PESO ACTUAL', data.weight ? data.weight + ' kg' : '—'],
-      ['IMC ORIENTATIVO', bmi ? bmi.toFixed(1) : '—']
-    ];
-    const metricWidth = (bodyWidth - metricGap * 3) / 4;
-    metrics.forEach(function (metric, index) {
-      const metricX = margin + index * (metricWidth + metricGap);
-      ctx.fillStyle = index === 3 ? '#f5eefb' : '#f8f6f9';
-      roundedRect(ctx, metricX, metricY, metricWidth, metricHeight, 14); ctx.fill();
-      ctx.textAlign = 'left'; ctx.fillStyle = '#77707d'; ctx.font = '700 12px system-ui,sans-serif';
-      ctx.fillText(metric[0], metricX + 13, metricY + 22);
-      ctx.fillStyle = index === 3 ? '#61279a' : '#241a2a'; ctx.font = '700 21px system-ui,sans-serif';
-      ctx.fillText(metric[1], metricX + 13, metricY + 52);
-    });
-    ctx.textAlign = 'left'; ctx.fillStyle = '#756e7b'; ctx.font = '14px system-ui,sans-serif';
-    const visualNote = (isEnduranceGoal(data.goal) || isPerformanceGoal(data.goal))
-      ? 'La imagen se mantiene como referencia; resistencia y rendimiento no predicen cambios corporales.'
-      : 'La meta es una referencia visual, no una promesa. Revisión sugerida: ' + proposedReviewDate(data.reviewISO) + '.';
-    ctx.fillText(visualNote, margin + 8, y + 532, bodyWidth - 24);
-    ctx.fillStyle = '#91899a'; ctx.font = '12px system-ui,sans-serif';
-    ctx.fillText('Las imágenes son orientativas y no reemplazan una evaluación profesional.', margin + 8, y + 552, bodyWidth - 24);
-    y += visualCardHeight + 14;
-    const foodOptions = ['Diario','3–5 veces por semana','1–2 veces por semana','Rara vez o nunca'];
-    const foodScore = function (value) { return value === foodOptions[0] ? 100 : value === foodOptions[1] ? 58 : value === foodOptions[2] ? 22 : value === foodOptions[3] ? 7 : 0; };
-    const foodValues = ['fruitFrequency','vegetableFrequency','fishFrequency','legumeFrequency'].map(function (key) { return foodScore(data[key]); }).filter(Boolean);
-    const nutritionScore = foodValues.length ? Math.round(foodValues.reduce(function (a,b) { return a+b; },0) / foodValues.length) : 0;
-    const proteinScore = data.protein === 'Sí, casi siempre' ? 100 : data.protein === 'A veces' ? 50 : data.protein === 'Casi nunca' ? 10 : 0;
-    const exerciseScore = data.days !== undefined && data.days !== '' ? Math.round(Number(data.days) / 7 * 100) : data.activityLevel === 'Alto' || data.activityLevel === 'Activo' ? 75 : data.activityLevel === 'Intermedio' || data.activityLevel === 'Medianamente activo' ? 45 : 20;
-    ctx.fillStyle = '#ffffff'; roundedRect(ctx, margin, y, bodyWidth, habitCardHeight, 20); ctx.fill();
-    ctx.fillStyle = '#7027b5'; ctx.font = '800 17px system-ui,sans-serif'; ctx.fillText('INDICADORES DE HÁBITOS · AUTORREPORTADOS', margin + 24, y + 30);
-    [['Alimentación reportada',nutritionScore],['Proteína habitual reportada',proteinScore],['Actividad semanal reportada',exerciseScore]].forEach(function (item,index) {
-      const rowY = y + 62 + index * 34;
-      ctx.fillStyle = '#403747'; ctx.font = '650 14px system-ui,sans-serif'; ctx.fillText(item[0], margin + 24, rowY);
-      ctx.fillStyle = '#ede7f1'; roundedRect(ctx, margin + 280, rowY - 12, bodyWidth - 360, 10, 5); ctx.fill();
-      ctx.fillStyle = '#9b67c3'; roundedRect(ctx, margin + 280, rowY - 12, (bodyWidth - 360) * item[1] / 100, 10, 5); ctx.fill();
-      ctx.fillStyle = '#5a4c62'; ctx.font = '700 14px system-ui,sans-serif'; ctx.fillText(item[1] + '%', margin + bodyWidth - 64, rowY);
-    });
-    ctx.fillStyle = '#756e7b'; ctx.font = '12px system-ui,sans-serif'; ctx.fillText('Escala visual basada solo en la frecuencia declarada; no mide suficiencia nutricional ni predice resultados. Metas por definir con el especialista.', margin + 24, y + 174);
-    y += habitCardHeight + 14;
-    sections.forEach(function (section) {
-      const sectionHeight = 48 + section.lines.reduce(function (sum, lines) { return sum + lines.length * 31 + 12; }, 0);
-      ctx.fillStyle = '#ffffff'; roundedRect(ctx, margin, y, bodyWidth, sectionHeight, 20); ctx.fill();
-      ctx.fillStyle = '#7027b5'; ctx.font = '800 17px system-ui,sans-serif'; ctx.fillText(section.title, margin + 24, y + 31);
-      let lineY = y + 65;
-      section.lines.forEach(function (lines) {
-        lines.forEach(function (line) {
-          ctx.fillStyle = '#403747';
-          const colon = line.indexOf(': ');
-          if (colon > 0) {
-            const label = line.slice(0, colon + 1), answer = line.slice(colon + 2);
-            ctx.font = '700 20px system-ui,sans-serif'; ctx.fillText(label, margin + 24, lineY);
-            const labelWidth = ctx.measureText(label + ' ').width;
-            ctx.font = '20px system-ui,sans-serif'; ctx.fillText(answer, margin + 24 + labelWidth, lineY);
-          } else { ctx.font = '20px system-ui,sans-serif'; ctx.fillText(line, margin + 24, lineY); }
-          lineY += 31;
-        });
-        lineY += 12;
+    };
+    const cardRows = function (section, width) {
+      const labelWidth = Math.min(148, Math.max(118, width * .32));
+      return section.rows.map(function (item) {
+        const labels = wrap(item.label, labelWidth - 12, '700 14px system-ui,sans-serif');
+        const values = wrap(item.value, width - labelWidth - 48, '15px system-ui,sans-serif');
+        return { item: item, labels: labels, values: values, height: Math.max(labels.length, values.length) * lineHeight + 10 };
       });
-      y += sectionHeight + 14;
+    };
+    const columnGap = 20, columnWidth = (bodyWidth - columnGap) / 2;
+    sections.forEach(function (section, index) {
+      section.layout = cardRows(section, columnWidth);
+      section.height = 56 + section.layout.reduce(function (sum, item) { return sum + item.height; }, 0) + 18;
     });
-    ctx.fillStyle = '#6e6672'; ctx.font = '17px system-ui,sans-serif';
-    ctx.fillText('Esta ficha reúne las respuestas que compartiste; guárdala y revísala antes de enviarla.', margin, y + 23);
-    ctx.fillText('La orientación no diagnostica ni reemplaza la evaluación presencial. WhatsApp 986-663-258', margin, y + 52);
+    const visualY = 402, visualHeight = 530, habitHeight = 344;
+    const sectionPairs = [[sections[0], sections[1]], [sections[2], sections[3]], [sections[4], sections[5]]];
+    const pairHeights = sectionPairs.map(function (pair) { return Math.max(pair[0].height, pair[1].height); });
+    canvas.height = visualY + visualHeight + 18 + habitHeight + 18 + pairHeights.reduce(function (sum, height) { return sum + height + 16; }, 0) + 105;
+    ctx.fillStyle = colors.bg; ctx.fillRect(0, 0, canvas.width, canvas.height);
+    ctx.fillStyle = colors.white; ctx.fillRect(0, 0, canvas.width, 382);
+    ctx.fillStyle = colors.purple; ctx.fillRect(0, 0, canvas.width, 12);
+    if (watermarkMark.naturalWidth) { ctx.save(); ctx.globalAlpha = .055; ctx.drawImage(watermarkMark, 830, 12, 210, 210); ctx.restore(); }
+    if (officialLogo.naturalWidth) ctx.drawImage(officialLogo, 445, 8, 190, 190);
+    ctx.fillStyle = colors.ink; ctx.font = '900 57px system-ui,sans-serif'; ctx.textAlign = 'center'; ctx.fillText('TU RESULTADO', canvas.width / 2, 255);
+    const goalGradient = ctx.createLinearGradient(180, 0, 900, 0); goalGradient.addColorStop(0, '#5c1596'); goalGradient.addColorStop(.55, '#8b23cc'); goalGradient.addColorStop(1, '#5c1596');
+    ctx.fillStyle = goalGradient; roundedRect(ctx, 180, 273, 720, 55, 18); ctx.fill();
+    ctx.fillStyle = colors.white; ctx.font = '800 27px system-ui,sans-serif'; ctx.textAlign = 'center'; ctx.fillText((displayGoal(data.goal) || 'OBJETIVO POR DEFINIR').toLocaleUpperCase('es-PE'), 540, 309, 690);
+    ctx.fillStyle = colors.muted; ctx.font = '15px system-ui,sans-serif'; ctx.fillText('Ficha informativa · ' + dateText + ' · ' + (data.name || 'Cliente'), 540, 359);
+
+    const drawCard = function (x, y, width, height, fill) {
+      ctx.fillStyle = fill || colors.white; roundedRect(ctx, x, y, width, height, 22); ctx.fill();
+      ctx.strokeStyle = colors.line; ctx.lineWidth = 1; roundedRect(ctx, x, y, width, height, 22); ctx.stroke();
+    };
+    drawCard(margin, visualY, bodyWidth, visualHeight);
+    const photoWidth = 570, dataX = margin + photoWidth + 18, dataWidth = bodyWidth - photoWidth - 18;
+    ctx.fillStyle = '#f4f2f5'; roundedRect(ctx, margin + 14, visualY + 14, photoWidth - 14, visualHeight - 28, 22); ctx.fill();
+    ctx.fillStyle = colors.purple; ctx.font = '800 15px system-ui,sans-serif'; ctx.textAlign = 'center';
+    const leftMid = margin + 14 + (photoWidth - 14) / 4, rightMid = margin + 14 + (photoWidth - 14) * .75;
+    const pill = function (x, y, width, label, color) { ctx.fillStyle = color; roundedRect(ctx, x - width / 2, y - 16, width, 32, 18); ctx.fill(); ctx.fillStyle = colors.white; ctx.font = '800 14px system-ui,sans-serif'; ctx.textAlign = 'center'; ctx.fillText(label, x, y + 5, width - 12); };
+    pill(leftMid, visualY + 38, 220, 'PUNTO DE PARTIDA', '#514b55');
+    pill(rightMid, visualY + 38, 200, pregnancyPath ? 'ATENCIÓN PERSONALIZADA' : targetBody.label === 'Objetivo a revisar con el profesional' ? 'A REVISAR' : 'META VISUAL', colors.purple);
+    const tileY = visualY + 58, tileH = 390, tileW = 220;
+    [leftMid, rightMid].forEach(function (center) { ctx.fillStyle = '#eeecef'; roundedRect(ctx, center - tileW / 2, tileY, tileW, tileH, 24); ctx.fill(); });
+    const drawContained = function (image, x, y, width, height, scale) {
+      if (!image || !image.naturalWidth && !image.width) return;
+      const iw = image.naturalWidth || image.width, ih = image.naturalHeight || image.height;
+      const fit = Math.min(width / iw, height / ih) * (scale || 1), w = iw * fit, h = ih * fit;
+      ctx.drawImage(image, x + (width - w) / 2, y + (height - h) / 2, w, h);
+    };
+    const statureScale = Math.max(.9, Math.min(1.06, Number(data.height || 170) / 170));
+    drawContained(images[0], leftMid - tileW / 2 + 4, tileY + 5, tileW - 8, tileH - 10, statureScale);
+    if (!pregnancyPath) drawContained(images[1], rightMid - tileW / 2 + 4, tileY + 5, tileW - 8, tileH - 10, statureScale);
+    const arrowX = (leftMid + rightMid) / 2;
+    if (pregnancyPath) {
+      ctx.fillStyle = colors.deep; ctx.font = '700 18px system-ui,sans-serif'; ctx.textAlign = 'center';
+      wrap('Este prefiltro general termina aquí. Coordina una evaluación personalizada antes de considerar suplementos.', tileW - 38, '700 18px system-ui,sans-serif').forEach(function (line, index) { ctx.fillText(line, rightMid, tileY + 160 + index * 27); });
+    } else {
+      ctx.fillStyle = colors.pale; ctx.beginPath(); ctx.arc(arrowX, visualY + 272, 25, 0, Math.PI * 2); ctx.fill();
+      ctx.fillStyle = colors.purple; ctx.font = '800 30px system-ui,sans-serif'; ctx.textAlign = 'center'; ctx.fillText('›', arrowX, visualY + 282);
+    }
+    ctx.textAlign = 'left'; ctx.fillStyle = colors.purple; ctx.font = '800 19px system-ui,sans-serif'; ctx.fillText('DATOS DEL CLIENTE', dataX + 20, visualY + 43);
+    const facts = [['Edad', data.age ? data.age + ' años' : '—'], ['Estatura', data.height ? data.height + ' cm' : '—'], ['Peso actual', data.weight ? data.weight + ' kg' : '—']];
+    if (!pregnancyPath) facts.push(['IMC orientativo', bmi ? bmi.toFixed(1) : '—']);
+    facts.forEach(function (fact, index) {
+      const rowY = visualY + 58 + index * 53;
+      const isBMI = fact[0] === 'IMC orientativo';
+      ctx.fillStyle = isBMI ? '#f7f0fb' : '#ffffff'; roundedRect(ctx, dataX + 15, rowY, dataWidth - 30, 47, 11); ctx.fill();
+      ctx.strokeStyle = colors.line; roundedRect(ctx, dataX + 15, rowY, dataWidth - 30, 47, 11); ctx.stroke();
+      ctx.fillStyle = colors.text; ctx.font = '650 15px system-ui,sans-serif'; ctx.textAlign = 'left'; ctx.fillText(fact[0], dataX + 28, rowY + 29);
+      ctx.fillStyle = isBMI ? colors.purple : colors.ink; ctx.font = '800 19px system-ui,sans-serif'; ctx.textAlign = 'right'; ctx.fillText(fact[1], dataX + dataWidth - 27, rowY + 30);
+    });
+    const classY = visualY + 285;
+    ctx.fillStyle = '#f1e4fa'; roundedRect(ctx, dataX + 15, classY, dataWidth - 30, 109, 16); ctx.fill();
+    ctx.fillStyle = colors.purple; ctx.textAlign = 'left'; ctx.font = '800 13px system-ui,sans-serif'; ctx.fillText(pregnancyPath ? 'SEGUIMIENTO PERSONALIZADO' : 'CLASIFICACIÓN CORPORAL · REFERENCIAL', dataX + 31, classY + 28);
+    const className = pregnancyPath ? 'NO SE ESTIMA EN ESTE PREFILTRO' : currentBody.category === 'ectomorfa' ? 'ECTOMORFA · DELGADA' : currentBody.category === 'mesomorfa' ? 'MESOMORFA · MUSCULATURA' : currentBody.category === 'endomorfa' ? 'ENDOMORFA · MAYOR VOLUMEN' : 'SIN CLASIFICACIÓN VISUAL';
+    ctx.fillStyle = colors.deep; ctx.font = '850 18px system-ui,sans-serif';
+    wrap(className, dataWidth - 60, '850 18px system-ui,sans-serif').slice(0, 2).forEach(function (line, index) { ctx.fillText(line, dataX + 31, classY + 58 + index * 22); });
+    ctx.fillStyle = colors.text; ctx.font = '12px system-ui,sans-serif'; ctx.fillText(pregnancyPath ? 'No se proyecta una meta corporal.' : 'Referencia ilustrativa, no es una medición clínica.', dataX + 31, classY + 96, dataWidth - 56);
+    ctx.fillStyle = colors.muted; ctx.font = '12px system-ui,sans-serif'; ctx.textAlign = 'left'; ctx.fillText('La imagen no predice cambios ni reemplaza una valoración profesional.', margin + 20, visualY + visualHeight - 12);
+
+    let y = visualY + visualHeight + 18;
+    const indicatorRows = window.GorillaNutritionBalance
+      ? window.GorillaNutritionBalance.calculate(data)
+      : [
+        { label: 'Proteínas', percent: null, classification: 'INFORMACIÓN INSUFICIENTE', detail: 'No se registran cantidades ni porciones.' },
+        { label: 'Carbohidratos', percent: null, classification: 'INFORMACIÓN INSUFICIENTE', detail: 'No se registran cantidades ni porciones.' },
+        { label: 'Grasas', percent: null, classification: 'INFORMACIÓN INSUFICIENTE', detail: 'No se registran cantidades ni porciones.' },
+        { label: 'Hidratación (agua)', percent: null, classification: 'INFORMACIÓN INSUFICIENTE', detail: 'Agua declarada: ' + (data.water || 'sin respuesta') + ' · la respuesta es un rango.' }
+      ];
+    drawCard(margin, y, bodyWidth, habitHeight);
+    ctx.fillStyle = colors.purple; roundedRect(ctx, margin + 20, y + 18, 48, 40, 12); ctx.fill();
+    ctx.strokeStyle = colors.white; ctx.fillStyle = colors.white; ctx.lineWidth = 3; ctx.lineCap = 'round';
+    ctx.beginPath(); ctx.moveTo(margin + 36, y + 25); ctx.lineTo(margin + 36, y + 34); ctx.moveTo(margin + 42, y + 25); ctx.lineTo(margin + 42, y + 34); ctx.moveTo(margin + 48, y + 25); ctx.lineTo(margin + 48, y + 34); ctx.moveTo(margin + 33, y + 34); ctx.lineTo(margin + 51, y + 34); ctx.moveTo(margin + 42, y + 34); ctx.lineTo(margin + 42, y + 50); ctx.stroke();
+    ctx.beginPath(); ctx.ellipse(margin + 58, y + 32, 4, 8, 0, 0, Math.PI * 2); ctx.fill(); ctx.beginPath(); ctx.moveTo(margin + 58, y + 40); ctx.lineTo(margin + 58, y + 50); ctx.stroke();
+    ctx.fillStyle = colors.ink; ctx.font = '850 23px system-ui,sans-serif'; ctx.textAlign = 'left'; ctx.fillText('BALANCE NUTRICIONAL · ESTIMACIÓN ORIENTATIVA', margin + 82, y + 47);
+    const barX = margin + 300, barWidth = 338, percentX = margin + 704, badgeX = margin + 742, badgeWidth = 210;
+    indicatorRows.forEach(function (item, index) {
+      const rowY = y + 72 + index * 53;
+      if (index) { ctx.strokeStyle = colors.line; ctx.beginPath(); ctx.moveTo(margin + 25, rowY - 5); ctx.lineTo(margin + bodyWidth - 25, rowY - 5); ctx.stroke(); }
+      ctx.fillStyle = colors.text; ctx.font = '750 15px system-ui,sans-serif'; ctx.textAlign = 'left'; ctx.fillText(item.label, margin + 28, rowY + 7, 210);
+      ctx.fillStyle = colors.muted; ctx.font = '11px system-ui,sans-serif';
+      const detailText = item.percent !== null && item.reference ? item.detail + ' · ' + item.reference : (item.detail || 'Sin porciones o cantidades registradas.');
+      wrap(detailText, 215, '11px system-ui,sans-serif').slice(0, 2).forEach(function (line, lineIndex) { ctx.fillText(line, margin + 28, rowY + 23 + lineIndex * 13, 215); });
+      ctx.fillStyle = '#e8e5ea'; roundedRect(ctx, barX, rowY - 3, barWidth, 15, 8); ctx.fill();
+      if (item.percent !== null && Number.isFinite(Number(item.percent))) { ctx.fillStyle = '#8c32c8'; roundedRect(ctx, barX, rowY - 3, barWidth * Math.max(0, Math.min(100, Number(item.percent))) / 100, 15, 8); ctx.fill(); }
+      ctx.fillStyle = item.percent === null ? colors.muted : colors.deep; ctx.font = '800 15px system-ui,sans-serif'; ctx.textAlign = 'center'; ctx.fillText(item.percent === null ? '—' : Math.round(item.percent) + '%', percentX, rowY + 8);
+      const statusColors = item.classification === 'BAJO' ? ['#fff2b8', '#604d00'] : item.classification === 'ALTO' ? ['#ffded9', '#8b3127'] : item.classification === 'MODERADO' ? ['#ebe8ee', '#514b55'] : ['#f1e8f8', colors.purple];
+      ctx.fillStyle = statusColors[0]; roundedRect(ctx, badgeX, rowY - 8, badgeWidth, 28, 12); ctx.fill();
+      ctx.fillStyle = statusColors[1]; ctx.font = '800 11px system-ui,sans-serif'; ctx.textAlign = 'center'; ctx.fillText(item.classification || 'INFORMACIÓN INSUFICIENTE', badgeX + badgeWidth / 2, rowY + 10, badgeWidth - 12);
+    });
+    ctx.fillStyle = colors.muted; ctx.textAlign = 'left'; ctx.font = '10px system-ui,sans-serif';
+    const amdrReference = window.GorillaNutritionBalance
+      ? window.GorillaNutritionBalance.referenceSummary(data.age)
+      : 'Referencia AMDR (% de energía); requiere interpretar cantidades con un profesional.';
+    const waterReference = window.GorillaNutritionBalance
+      ? window.GorillaNutritionBalance.waterReference(data)
+      : 'La referencia de agua total requiere interpretación profesional.';
+    ctx.fillText(amdrReference, margin + 26, y + 284, bodyWidth - 52);
+    ctx.fillText(waterReference, margin + 26, y + 299, bodyWidth - 52);
+    ctx.fillText('Las respuestas actuales no aportan gramos, energía ni volumen total; por eso los porcentajes quedan como información insuficiente.', margin + 26, y + 314, bodyWidth - 52);
+    ctx.fillText('AMDR = distribución aceptable de macronutrientes; AI = ingesta adecuada de agua total. No son dosis ni metas personales. Fuente: National Academies DRI.', margin + 26, y + 329, bodyWidth - 52);
+    y += habitHeight + 18;
+
+    const drawInfoCard = function (section, x, cardY, width, height) {
+      drawCard(x, cardY, width, height);
+      ctx.fillStyle = '#f2e9f8'; roundedRect(ctx, x + 1, cardY + 1, width - 2, 48, 20); ctx.fill();
+      ctx.fillStyle = colors.purple; ctx.font = '850 16px system-ui,sans-serif'; ctx.textAlign = 'left'; ctx.fillText(section.title, x + 20, cardY + 31, width - 40);
+      let rowY = cardY + 62;
+      const labelWidth = Math.min(148, Math.max(118, width * .32));
+      section.layout.forEach(function (item, index) {
+        if (index) { ctx.strokeStyle = colors.line; ctx.beginPath(); ctx.moveTo(x + 20, rowY - 5); ctx.lineTo(x + width - 20, rowY - 5); ctx.stroke(); }
+        ctx.fillStyle = colors.text; ctx.textAlign = 'left'; ctx.font = '700 14px system-ui,sans-serif';
+        item.labels.forEach(function (line, lineIndex) { ctx.fillText(line, x + 20, rowY + 15 + lineIndex * lineHeight, labelWidth - 8); });
+        ctx.fillStyle = colors.text; ctx.font = '15px system-ui,sans-serif';
+        item.values.forEach(function (line, lineIndex) { ctx.fillText(line, x + 20 + labelWidth, rowY + 15 + lineIndex * lineHeight, width - labelWidth - 40); });
+        rowY += item.height;
+      });
+    };
+    sectionPairs.forEach(function (pair, index) {
+      const pairHeight = pairHeights[index];
+      drawInfoCard(pair[0], margin, y, columnWidth, pairHeight);
+      drawInfoCard(pair[1], margin + columnWidth + columnGap, y, columnWidth, pairHeight);
+      y += pairHeight + 16;
+    });
+    ctx.fillStyle = colors.pale; roundedRect(ctx, margin, y, bodyWidth, 74, 22); ctx.fill();
+    ctx.fillStyle = colors.purple; ctx.font = '800 17px system-ui,sans-serif'; ctx.textAlign = 'left'; ctx.fillText('NOTA', margin + 24, y + 29);
+    ctx.fillStyle = colors.text; ctx.font = '15px system-ui,sans-serif';
+    ctx.fillText('Esta ficha es informativa. No diagnostica condiciones ni deficiencias, ni prescribe suplementos.', margin + 90, y + 29, bodyWidth - 120);
+    ctx.fillText('Las referencias visuales son ilustrativas y deben revisarse con un profesional de Gorilla Labs.', margin + 90, y + 53, bodyWidth - 120);
+    ctx.fillStyle = colors.muted; ctx.font = '13px system-ui,sans-serif'; ctx.fillText('WhatsApp 986-663-258 · Ficha generada el ' + dateText, margin, y + 97);
     return canvas;
   }
 
