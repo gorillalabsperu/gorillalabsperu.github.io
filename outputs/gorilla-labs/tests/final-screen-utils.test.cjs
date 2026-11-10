@@ -1,7 +1,7 @@
 const test = require('node:test');
 const assert = require('node:assert/strict');
 const zlib = require('node:zlib');
-const { verifyPngBlob, buildAdvisorMessage, getCommunityInviteUrl, showPregnancyQuestion, isPregnant, createDownloadState } = require('../final-screen-utils.js');
+const { verifyPngBlob, createPdfBlobFromJpegBlob, verifyPdfBlob, buildAdvisorMessage, getCommunityInviteUrl, showPregnancyQuestion, isPregnant, createDownloadState } = require('../final-screen-utils.js');
 
 function crc32(buffer) {
   let crc = 0xffffffff;
@@ -38,6 +38,20 @@ function pngBlob(width, height, includeImageData = true) {
   return new Blob([signature, ...chunks], { type: 'image/png' });
 }
 
+function jpegBytes(width, height) {
+  const segmentLength = 17;
+  const frame = Buffer.from([
+    0xff, 0xd8,
+    0xff, 0xc0, 0x00, segmentLength,
+    0x08, (height >>> 8) & 0xff, height & 0xff, (width >>> 8) & 0xff, width & 0xff, 0x03,
+    0x01, 0x11, 0x00, 0x02, 0x11, 0x00, 0x03, 0x11, 0x00,
+    0xff, 0xd9
+  ]);
+  const appPayload = Buffer.alloc(120);
+  const appSegment = Buffer.concat([Buffer.from([0xff, 0xe0, 0x00, 0x7a]), appPayload]);
+  return Buffer.concat([frame.subarray(0, 2), appSegment, frame.subarray(2)]);
+}
+
 test('valida PNG completo de 1080 px y conserva la altura dinámica', async () => {
   const blob = pngBlob(1080, 2637);
   assert.equal(await verifyPngBlob(blob, 1080, 2637), blob);
@@ -54,10 +68,23 @@ test('rechaza imagen incompleta o con tamaño diferente al canvas', async () => 
   await assert.rejects(() => verifyPngBlob(new Blob([corruptedBytes], { type: 'image/png' }), 1080, 1), /checksum/);
 });
 
+test('genera y verifica un PDF completo con la proporción y dimensiones de la ficha', async () => {
+  const blob = new Blob([jpegBytes(1080, 2637)], { type: 'image/jpeg' });
+  const pdf = await createPdfBlobFromJpegBlob(blob, 1080, 2637);
+  assert.equal(pdf.type, 'application/pdf');
+  assert.equal(await verifyPdfBlob(pdf, 1080, 2637), pdf);
+  const bytes = Buffer.from(await pdf.arrayBuffer());
+  assert.equal(bytes.subarray(0, 8).toString('ascii'), '%PDF-1.4');
+  assert.match(bytes.toString('latin1'), /\/MediaBox \[0 0 595\.28 1453\.\d+\]/);
+  assert.match(bytes.toString('latin1'), /\/Width 1080 \/Height 2637/);
+  await assert.rejects(() => createPdfBlobFromJpegBlob(blob, 1080, 2600), /unexpected JPEG dimensions/);
+  await assert.rejects(() => verifyPdfBlob(new Blob(['not pdf'], { type: 'application/pdf' })), /invalid PDF/);
+});
+
 test('mensaje de WhatsApp solo incluye el nombre y pide adjuntar manualmente la ficha', () => {
   const message = buildAdvisorMessage('Alexa   Ríos');
   assert.match(message, /Hola, soy Alexa Ríos/);
-  assert.match(message, /Adjuntaré mi ficha PNG manualmente/);
+  assert.match(message, /Adjuntaré mi ficha manualmente/);
   assert.doesNotMatch(message, /años|objetivo|estatura|peso|alergias|antecedentes|suplementos/i);
 });
 
@@ -76,11 +103,11 @@ test('la pregunta de embarazo solo aparece para mujeres y la ruta especial solo 
   assert.equal(isPregnant({ sex: 'Hombre', pregnancyStatus: 'Sí' }), false);
 });
 
-test('bloquea el envío al asesor hasta verificar el PNG e iniciar su descarga', () => {
+test('bloquea el envío al asesor hasta verificar la ficha e iniciar su descarga', () => {
   const state = createDownloadState();
   assert.equal(state.canSendToAdvisor(), false);
   assert.equal(state.markDownloadStarted(), false);
-  state.markPngVerified();
+  state.markFileVerified();
   assert.equal(state.canSendToAdvisor(), false);
   assert.equal(state.markDownloadStarted(), true);
   assert.equal(state.canSendToAdvisor(), true);

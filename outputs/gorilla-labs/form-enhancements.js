@@ -628,6 +628,7 @@
 
   save = async function () {
     preparedSummaryBlob = null;
+    preparedSummaryPngBlob = null;
     data.createdAt = new Date().toLocaleString('es-PE');
     const today = new Date();
     data.createdISO = today.toISOString().slice(0, 10);
@@ -664,9 +665,10 @@
       '<p class="cloud-receipt" role="status">' + escapeHTML(receiptMessage) + '</p>' +
       '<div class="final-actions">' +
       '<button type="button" class="primary" id="downloadSummary">DESCARGAR MI FICHA</button>' +
-      '<p class="hint" id="downloadStatus" role="status" aria-live="polite">Estamos preparando tu ficha PNG completa.</p>' +
+      '<button type="button" class="secondary-action download-link" id="downloadSummaryPng" disabled>Descargar también en PNG</button>' +
+      '<p class="hint" id="downloadStatus" role="status" aria-live="polite">Estamos preparando tu ficha PDF completa.</p>' +
       '<button type="button" class="secondary-action" id="openWhatsapp" disabled>ENVIAR MI FICHA AL ASESOR</button>' +
-      '<p class="hint" id="advisorHelp">Primero inicia la descarga. WhatsApp abrirá un mensaje preparado; adjunta la ficha manualmente y pulsa enviar.</p>' +
+      '<p class="hint" id="advisorHelp">Primero inicia la descarga. WhatsApp abrirá un mensaje preparado; adjunta manualmente la ficha PDF o PNG y pulsa enviar.</p>' +
       '<button type="button" class="secondary-action" id="joinCommunity" ' + (communityInviteUrl ? '' : 'disabled') + '>UNIRME A LA COMUNIDAD GORILLA LABS PERÚ</button>' +
       '<p class="hint" id="communityStatus" role="status" aria-live="polite">' + (communityInviteUrl ? 'La invitación oficial de WhatsApp está lista.' : 'La invitación oficial de la comunidad está pendiente de configuración.') + '</p>' +
       '<ul class="community-benefits" aria-label="Beneficios de la comunidad"><li><span class="community-check" aria-hidden="true">✓</span><span>Promociones y descuentos exclusivos.</span></li><li><span class="community-check" aria-hidden="true">✓</span><span>Tips según tu progreso y objetivo.</span></li><li><span class="community-check" aria-hidden="true">✓</span><span>Consejos para mejorar tus hábitos y cumplir tus metas.</span></li></ul>' +
@@ -682,6 +684,7 @@
       if (communityInviteUrl) window.open(communityInviteUrl, '_blank', 'noopener,noreferrer');
     });
     const downloadButton = document.querySelector('#downloadSummary');
+    const downloadPngButton = document.querySelector('#downloadSummaryPng');
     downloadButton.addEventListener('click', function () {
       if (!preparedSummaryBlob) {
         prepareSummaryDownload(downloadButton, downloadState);
@@ -692,15 +695,26 @@
         downloadState.markDownloadStarted();
         waButton.disabled = false;
         document.querySelector('#downloadStatus').textContent = 'La descarga se inició. Revisa Descargas para confirmar que el archivo quedó disponible.';
-        document.querySelector('#advisorHelp').textContent = 'En WhatsApp se abrirá un mensaje preparado. Adjunta manualmente la ficha PNG y pulsa enviar.';
+        document.querySelector('#advisorHelp').textContent = 'En WhatsApp se abrirá un mensaje preparado. Adjunta manualmente la ficha PDF o PNG y pulsa enviar.';
       } catch (_) {
         document.querySelector('#downloadStatus').textContent = 'No se pudo iniciar la descarga. Vuelve a pulsar «Descargar mi ficha» para intentarlo otra vez.';
+      }
+    });
+    downloadPngButton.addEventListener('click', function () {
+      if (!preparedSummaryPngBlob) return;
+      try {
+        triggerBlobDownload(preparedSummaryPngBlob, summaryFilename('png'));
+        document.querySelector('#downloadStatus').textContent = 'La descarga PNG se inició. Revisa Descargas para confirmar que el archivo quedó disponible.';
+      } catch (_) {
+        document.querySelector('#downloadStatus').textContent = 'No se pudo iniciar la descarga PNG. Inténtalo de nuevo.';
       }
     });
     prepareSummaryDownload(downloadButton, downloadState);
     document.querySelector('#finishProfile').addEventListener('click', function () {
       step = 0;
       Object.keys(data).forEach(function (key) { delete data[key]; });
+      preparedSummaryBlob = null;
+      preparedSummaryPngBlob = null;
       if (summaryDownloadUrl) { URL.revokeObjectURL(summaryDownloadUrl); summaryDownloadUrl = null; }
       lastRenderedStep = 0;
       document.querySelector('#app').classList.add('hidden');
@@ -1234,33 +1248,46 @@
   function whatsappMessage() {
     return window.GorillaFinalScreenUtils
       ? window.GorillaFinalScreenUtils.buildAdvisorMessage(data.name)
-      : 'Hola, soy ' + (data.name || 'cliente') + '. Ya completé mi ficha de Gorilla Labs y adjuntaré mi ficha PNG manualmente en este chat.';
+      : 'Hola, soy ' + (data.name || 'cliente') + '. Ya completé mi ficha de Gorilla Labs y adjuntaré mi ficha manualmente en este chat.';
   }
 
   let preparedSummaryBlob = null;
+  let preparedSummaryPngBlob = null;
 
   function prepareSummaryDownload(button, downloadState) {
     if (!button) return;
     const status = document.querySelector('#downloadStatus');
     button.disabled = true;
     button.textContent = 'Generando ficha…';
-    if (status) status.textContent = 'Estamos preparando y verificando la ficha PNG completa.';
+    if (status) status.textContent = 'Estamos preparando y verificando tu ficha PDF completa.';
     drawSummaryCanvas().then(function (canvas) {
-      return canvasToPngBlob(canvas).then(function (blob) {
-        if (!window.GorillaFinalScreenUtils) throw new Error('PNG validation unavailable');
-        return window.GorillaFinalScreenUtils.verifyPngBlob(blob, canvas.width, canvas.height);
+      if (!window.GorillaFinalScreenUtils) throw new Error('Ficha validation unavailable');
+      return canvasToPngBlob(canvas).then(function (pngBlob) {
+        return Promise.all([
+          window.GorillaFinalScreenUtils.verifyPngBlob(pngBlob, canvas.width, canvas.height),
+          canvasToJpegBlob(canvas).then(function (jpegBlob) {
+            return window.GorillaFinalScreenUtils.createPdfBlobFromJpegBlob(jpegBlob, canvas.width, canvas.height)
+              .then(function (pdfBlob) { return window.GorillaFinalScreenUtils.verifyPdfBlob(pdfBlob, canvas.width, canvas.height); });
+          })
+        ]).then(function (files) { return { png: files[0], pdf: files[1] }; });
       });
-    }).then(function (blob) {
-      preparedSummaryBlob = blob;
-      if (downloadState) downloadState.markPngVerified();
+    }).then(function (files) {
+      preparedSummaryBlob = files.pdf;
+      preparedSummaryPngBlob = files.png;
+      if (downloadState) downloadState.markFileVerified();
+      const pngButton = document.querySelector('#downloadSummaryPng');
+      if (pngButton) pngButton.disabled = false;
       button.disabled = false;
       button.textContent = 'DESCARGAR MI FICHA';
-      if (status) status.textContent = 'La ficha PNG está generada y verificada. Pulsa el botón para iniciar la descarga.';
+      if (status) status.textContent = 'La ficha PDF completa está generada y verificada. Pulsa el botón para descargarla.';
     }).catch(function () {
       preparedSummaryBlob = null;
+      preparedSummaryPngBlob = null;
       button.disabled = false;
       button.textContent = 'REINTENTAR GENERACIÓN';
-      if (status) status.textContent = 'No pudimos generar la ficha PNG. Pulsa «Reintentar generación» para volver a intentarlo.';
+      const pngButton = document.querySelector('#downloadSummaryPng');
+      if (pngButton) pngButton.disabled = true;
+      if (status) status.textContent = 'No pudimos generar la ficha PDF completa. Pulsa «Reintentar generación» para volver a intentarlo.';
     });
   }
 
@@ -1284,11 +1311,37 @@
     });
   }
 
+  function canvasToJpegBlob(canvas) {
+    return new Promise(function (resolve, reject) {
+      if (typeof canvas.toBlob === 'function') {
+        canvas.toBlob(function (blob) {
+          blob && blob.type === 'image/jpeg' ? resolve(blob) : reject(new Error('No se pudo convertir la ficha a JPEG para crear el PDF.'));
+        }, 'image/jpeg', 0.96);
+        return;
+      }
+      try {
+        const dataUrl = canvas.toDataURL('image/jpeg', 0.96);
+        const base64 = dataUrl.split(',')[1];
+        if (!base64 || typeof window.atob !== 'function') throw new Error('JPEG conversion failed');
+        const binary = window.atob(base64);
+        const bytes = new Uint8Array(binary.length);
+        for (let index = 0; index < binary.length; index += 1) bytes[index] = binary.charCodeAt(index);
+        resolve(new Blob([bytes], { type: 'image/jpeg' }));
+      } catch (error) {
+        reject(error);
+      }
+    });
+  }
+
+  function summaryFilename(extension) {
+    return 'gorilla-labs-ficha-' + safeFilename(data.name) + '-' + (data.createdISO || new Date().toISOString().slice(0, 10)) + '.' + extension;
+  }
+
   function startSummaryDownload(blob) {
     summaryDownloadUrl = URL.createObjectURL(blob);
     const link = document.createElement('a');
     link.href = summaryDownloadUrl;
-    link.download = 'gorilla-labs-ficha-' + safeFilename(data.name) + '-' + (data.createdISO || new Date().toISOString().slice(0, 10)) + '.png';
+    link.download = summaryFilename('pdf');
     link.style.position = 'fixed';
     link.style.left = '-10000px';
     document.body.appendChild(link);
