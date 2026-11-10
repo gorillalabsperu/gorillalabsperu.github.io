@@ -1397,7 +1397,11 @@
     ctx.fillStyle = colors.white; ctx.fillRect(0, 0, canvas.width, 382);
     ctx.fillStyle = colors.purple; ctx.fillRect(0, 0, canvas.width, 12);
     if (watermarkMark.naturalWidth) { ctx.save(); ctx.globalAlpha = .055; ctx.drawImage(watermarkMark, 830, 12, 210, 210); ctx.restore(); }
-    if (officialLogo.naturalWidth) ctx.drawImage(officialLogo, 445, 8, 190, 190);
+    if (officialLogo.naturalWidth) {
+      const logoHeight = 190;
+      const logoWidth = logoHeight * officialLogo.naturalWidth / officialLogo.naturalHeight;
+      ctx.drawImage(officialLogo, (canvas.width - logoWidth) / 2, 8, logoWidth, logoHeight);
+    }
     ctx.fillStyle = colors.ink; ctx.font = '900 57px system-ui,sans-serif'; ctx.textAlign = 'center'; ctx.fillText('TU RESULTADO', canvas.width / 2, 255);
     const goalGradient = ctx.createLinearGradient(180, 0, 900, 0); goalGradient.addColorStop(0, '#5c1596'); goalGradient.addColorStop(.55, '#8b23cc'); goalGradient.addColorStop(1, '#5c1596');
     ctx.fillStyle = goalGradient; roundedRect(ctx, 180, 273, 720, 55, 18); ctx.fill();
